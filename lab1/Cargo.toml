@@ -4,4 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+rand = "0.8.5"
 socket2 = { version = "0.5.7", features = ["all"] }
+zerocopy = "0.7.35"
