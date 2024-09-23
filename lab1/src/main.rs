@@ -1,6 +1,6 @@
 use core::panic;
 use std::mem::MaybeUninit;
-use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4};
 use std::str::FromStr;
 use std::time::{SystemTime, Duration};
 use rand::Rng;
@@ -117,9 +117,18 @@ fn bind_to_multicast_socket(addr: &str) -> Socket {
     let addr = SocketAddr::from_str(addr)
         .expect("Wrong addr");
 
+    let mut addr_v4: Option<Ipv4Addr> = None;
+    let mut addr_v6: Option<Ipv6Addr> = None;
+
     let domain = match addr {
-        SocketAddr::V4(_) => Domain::IPV4,
-        SocketAddr::V6(_) => Domain::IPV6,
+        SocketAddr::V4(addr) => {
+            addr_v4 = Some(*addr.ip());
+            Domain::IPV4
+        },
+        SocketAddr::V6(addr) => {
+            addr_v6 = Some(*addr.ip());
+            Domain::IPV6
+        },
     };
 
     let socket = Socket::new(domain, Type::DGRAM, Some(Protocol::UDP))
@@ -134,7 +143,16 @@ fn bind_to_multicast_socket(addr: &str) -> Socket {
     socket.bind(&addr)
         .expect("Failed bind");
 
+    if let Some(adr) = addr_v4 {
+        socket.join_multicast_v4(&adr, &adr).unwrap();
+    }
+
+    if let Some(adr) = addr_v6 {
+        socket.join_multicast_v6(&adr, 0).unwrap();
+    }
+
     socket
+
 }
 
 fn main() {
