@@ -1,3 +1,5 @@
+import asyncio
+
 import app.keyboard as keyboards
 
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
@@ -14,6 +16,11 @@ from config import WEATHER_API_KEY
 from config import OPENTRIPMAP_API_KEY
 
 router = Router()
+
+weather_text = ""
+desc_text = ""
+
+
 
 @router.message(CommandStart())
 async def command_start(message: Message):
@@ -38,29 +45,27 @@ async def process_location(msg: Message):
     places = []
     for place in answer:
         name = "{}, страна: {}".format(place['name'], place['country'])
-        places.append([InlineKeyboardButton(text=name, callback_data="{} {}".format(place['point']['lat'], place['point']['lng']))])
+        places.append([InlineKeyboardButton(text=name, callback_data="{} {}".format(place['point']['lat'],
+                                                                                    place['point']['lng']))])
 
     places_btns = InlineKeyboardMarkup(inline_keyboard=places)
 
     await msg.answer(text="Пожалуйста, выберите подходящее место", reply_markup=places_btns)
 
 
-@router.callback_query()
-async def location_description(callback: CallbackQuery):
-    (lat, lon) = callback.data.split(" ")
+async def get_weather(lat, lon):
+    global weather_text
 
-    # print(lat, lon)
-    #
-    # weather_url = "https://api.openweathermap.org/data/2.5/weather?lat={}&lon={}&appid={}".format(lat, lon, WEATHER_API_KEY)
-    #
-    # weather_resp = requests.get(weather_url).json()
-    #
-    # print(weather_resp)
+    weather_url = "https://api.openweathermap.org/data/2.5/weather?lat={}&lon={}&appid={}".format(lat, lon,
+                                                                                                  WEATHER_API_KEY)
+    weather_resp = requests.get(weather_url).json()['main']
+    real_temp = float(weather_resp['temp']) - 273
+    feel_temp = float(weather_resp['feels_like']) - 273
+    weather_text += "Температура: {} С, ощущается как {} С\n".format(real_temp, feel_temp)
 
-    # await callback.message.answer(text="Temperature in this place is {}".format(weather_resp['temp']))
 
-    sights = []
-    default_description = "Очень хорошее место!"
+async def get_opentripmap(lat, lon):
+    global desc_text
 
     opentripmap_url = "https://api.opentripmap.com/0.1/en/places/radius?apikey={}".format(OPENTRIPMAP_API_KEY)
     opentripmap_query = {
@@ -72,6 +77,9 @@ async def location_description(callback: CallbackQuery):
     }
 
     opentripmap_response = requests.get(opentripmap_url, params=opentripmap_query).json()['features']
+
+    sights = []
+    default_description = "Очень хорошее место!"
 
     for sight in opentripmap_response:
         if sight['properties']['name'] == '':
@@ -94,11 +102,26 @@ async def location_description(callback: CallbackQuery):
             sights.append(
                 {'name': sight['properties']['name'], 'descr': default_description})
 
-    reply_message_text = ""
     for sight in sights:
-        reply_message_text += "Название: {}\nОписание: {}\n\n".format(sight['name'], sight['descr'])
+        desc_text += "Название: {}\nОписание: {}\n\n".format(sight['name'], sight['descr'])
+    if desc_text == "":
+        desc_text = "Не найдено достопримечательностей поблизости"
 
-    if reply_message_text == "":
-        reply_message_text = "Не найдено достопримечательностей поблизости"
+    return desc_text
 
-    await callback.message.answer(text=reply_message_text)
+
+@router.callback_query()
+async def location_description(callback: CallbackQuery):
+    global weather_text
+    global desc_text
+
+    (lat, lon) = callback.data.split(" ")
+    # print(lat, lon)
+
+    weather = asyncio.create_task(get_weather(lat, lon))
+    opentripmap = asyncio.create_task(get_opentripmap(lat, lon))
+
+    await weather
+    await opentripmap
+
+    await callback.message.answer(text=weather_text + desc_text)
