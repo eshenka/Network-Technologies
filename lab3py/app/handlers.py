@@ -1,25 +1,16 @@
 import asyncio
-
-import app.keyboard as keyboards
-
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
+import requests
 
 from aiogram import F, Router
-from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, CallbackQuery, FSInputFile
-
-import requests
+from aiogram.filters import CommandStart
+from aiogram.types import Message, CallbackQuery
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 from config import GRAPHHOPPER_API_KEY
 from config import WEATHER_API_KEY
 from config import OPENTRIPMAP_API_KEY
 
 router = Router()
-
-weather_text = ""
-desc_text = ""
-
 
 
 @router.message(CommandStart())
@@ -53,20 +44,16 @@ async def process_location(msg: Message):
     await msg.answer(text="Пожалуйста, выберите подходящее место", reply_markup=places_btns)
 
 
-async def get_weather(lat, lon):
-    global weather_text
-
-    weather_url = "https://api.openweathermap.org/data/2.5/weather?lat={}&lon={}&appid={}".format(lat, lon,
-                                                                                                  WEATHER_API_KEY)
+async def get_weather(weather_text, lat, lon):
+    weather_url = "https://ru.api.openweathermap.org/data/2.5/weather?lat={}&lon={}&appid={}".format(lat, lon,
+                                                                                                     WEATHER_API_KEY)
     weather_resp = requests.get(weather_url).json()['main']
-    real_temp = float(weather_resp['temp']) - 273
-    feel_temp = float(weather_resp['feels_like']) - 273
-    weather_text += "Температура: {} С, ощущается как {} С\n".format(real_temp, feel_temp)
+    real_temp = "{:.2f}".format(float(weather_resp['temp']) - 273)
+    feel_temp = "{:.2f}".format(float(weather_resp['feels_like']) - 273)
+    weather_text[0] += "Температура: {} С, ощущается как {} С\n\n".format(real_temp, feel_temp)
 
 
-async def get_opentripmap(lat, lon):
-    global desc_text
-
+async def get_opentripmap(desc_text, lat, lon):
     opentripmap_url = "https://api.opentripmap.com/0.1/en/places/radius?apikey={}".format(OPENTRIPMAP_API_KEY)
     opentripmap_query = {
         "lang": "ru",
@@ -103,25 +90,24 @@ async def get_opentripmap(lat, lon):
                 {'name': sight['properties']['name'], 'descr': default_description})
 
     for sight in sights:
-        desc_text += "Название: {}\nОписание: {}\n\n".format(sight['name'], sight['descr'])
-    if desc_text == "":
-        desc_text = "Не найдено достопримечательностей поблизости"
+        desc_text[0] += "Название: {}\nОписание: {}\n\n".format(sight['name'], sight['descr'])
+    if desc_text[0] == "":
+        desc_text[0] = "Не найдено достопримечательностей поблизости"
 
     return desc_text
 
 
 @router.callback_query()
 async def location_description(callback: CallbackQuery):
-    global weather_text
-    global desc_text
+    weather_text = [""]
+    desc_text = [""]
 
     (lat, lon) = callback.data.split(" ")
-    # print(lat, lon)
 
-    weather = asyncio.create_task(get_weather(lat, lon))
-    opentripmap = asyncio.create_task(get_opentripmap(lat, lon))
+    weather = asyncio.create_task(get_weather(weather_text, lat, lon))
+    opentripmap = asyncio.create_task(get_opentripmap(desc_text, lat, lon))
 
     await weather
     await opentripmap
 
-    await callback.message.answer(text=weather_text + desc_text)
+    await callback.message.answer(text=weather_text[0] + desc_text[0])
